@@ -8,6 +8,7 @@ const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json()); // Ensure Express can parse Twilio's JSON payload
 
 // Handle /call command
 bot.command('call', async (ctx) => {
@@ -15,7 +16,7 @@ bot.command('call', async (ctx) => {
     const phoneNumber = messageText.split(" ")[1]; // Extract number
 
     if (!phoneNumber || !phoneNumber.startsWith("+")) {
-        return ctx.reply("Please provide a valid phone number. Example: /call +123456789");
+        return ctx.reply("❌ Please provide a valid phone number. Example: /call +123456789");
     }
 
     try {
@@ -23,24 +24,37 @@ bot.command('call', async (ctx) => {
             to: phoneNumber,
             from: process.env.TWILIO_PHONE_NUMBER,
             url: `${process.env.WEBHOOK_URL}/twiml?user_id=${ctx.from.id}`, // Webhook for call instructions
+            timeout: 120, // Increased timeout to 120 seconds
         });
 
-        ctx.reply(`Calling ${phoneNumber}...`);
+        ctx.reply(`📞 Calling ${phoneNumber}...`);
     } catch (error) {
-        console.error(error);
-        ctx.reply("Failed to make the call.");
+        console.error("❌ Twilio Error:", error);
+
+        let errorMessage = "❌ Failed to make the call.";
+        if (error.code) {
+            errorMessage += `\nError Code: ${error.code}`;
+        }
+        if (error.message) {
+            errorMessage += `\nMessage: ${error.message}`;
+        }
+
+        ctx.reply(errorMessage);
     }
 });
 
 // Handle Twilio Webhook for call instructions
 app.post('/twiml', (req, res) => {
     const userId = req.query.user_id;
-    const twiml = new twilio.twiml.VoiceResponse();
+    console.log(`📞 Incoming call for user ${userId}`);
 
+    const twiml = new twilio.twiml.VoiceResponse();
     twiml.say("Hello! This is an automated call from your Telegram bot.");
+    
     twiml.gather({
         numDigits: 1,
         action: `${process.env.WEBHOOK_URL}/gather?user_id=${userId}`,
+        method: 'POST',
     }).say("Press any key to send back to Telegram.");
 
     res.type('text/xml').send(twiml.toString());
@@ -51,8 +65,10 @@ app.post('/gather', (req, res) => {
     const userId = req.query.user_id;
     const digits = req.body.Digits;
 
+    console.log(`🔢 User ${userId} pressed: ${digits}`);
+
     if (userId) {
-        bot.telegram.sendMessage(userId, `User pressed: ${digits}`);
+        bot.telegram.sendMessage(userId, `✅ User pressed: ${digits}`);
     }
 
     const twiml = new twilio.twiml.VoiceResponse();
@@ -62,7 +78,17 @@ app.post('/gather', (req, res) => {
 
 // Start Express server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
+
+// Handle graceful bot shutdown
+process.once('SIGINT', () => {
+    console.log("⚠️ Stopping bot...");
+    bot.stop("SIGINT");
+});
+process.once('SIGTERM', () => {
+    console.log("⚠️ Stopping bot...");
+    bot.stop("SIGTERM");
+});
 
 // Start Telegram bot
-bot.launch();
+bot.launch().then(() => console.log("🤖 Bot started successfully!"));
