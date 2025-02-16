@@ -8,7 +8,6 @@ const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
 
 const app = express();
 app.use(express.urlencoded({ extended: true }));
-app.use(express.json()); // Ensure Express can parse Twilio's JSON payload
 
 // Handle /call command
 bot.command('call', async (ctx) => {
@@ -46,16 +45,25 @@ bot.command('call', async (ctx) => {
 // Handle Twilio Webhook for call instructions
 app.post('/twiml', (req, res) => {
     const userId = req.query.user_id;
-    console.log(`📞 Incoming call for user ${userId}`);
-
     const twiml = new twilio.twiml.VoiceResponse();
+
+    // Keep the call active for longer
+    twiml.pause({ length: 3 }); // Wait before speaking
     twiml.say("Hello! This is an automated call from your Telegram bot.");
     
+    // Loop the message to keep the call open
+    twiml.say("Stay on the line, press any key to continue.").pause({ length: 5 });
+    
+    // Gather user input with a long timeout
     twiml.gather({
         numDigits: 1,
         action: `${process.env.WEBHOOK_URL}/gather?user_id=${userId}`,
-        method: 'POST',
-    }).say("Press any key to send back to Telegram.");
+        timeout: 10, // User has 10 seconds to respond
+    }).say("Press any key to send a response to Telegram.");
+
+    // If no input, repeat
+    twiml.pause({ length: 3 });
+    twiml.say("Still there? Press any key to continue.");
 
     res.type('text/xml').send(twiml.toString());
 });
@@ -64,8 +72,6 @@ app.post('/twiml', (req, res) => {
 app.post('/gather', (req, res) => {
     const userId = req.query.user_id;
     const digits = req.body.Digits;
-
-    console.log(`🔢 User ${userId} pressed: ${digits}`);
 
     if (userId) {
         bot.telegram.sendMessage(userId, `✅ User pressed: ${digits}`);
@@ -80,15 +86,5 @@ app.post('/gather', (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
 
-// Handle graceful bot shutdown
-process.once('SIGINT', () => {
-    console.log("⚠️ Stopping bot...");
-    bot.stop("SIGINT");
-});
-process.once('SIGTERM', () => {
-    console.log("⚠️ Stopping bot...");
-    bot.stop("SIGTERM");
-});
-
 // Start Telegram bot
-bot.launch().then(() => console.log("🤖 Bot started successfully!"));
+bot.launch();
