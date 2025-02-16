@@ -54,16 +54,10 @@ app.post('/twiml', (req, res) => {
     // Loop the message to keep the call open
     twiml.say("Stay on the line, press any key to continue.").pause({ length: 5 });
     
-    // Gather user input with a long timeout
-    twiml.gather({
-        numDigits: 1,
-        action: `${process.env.WEBHOOK_URL}/gather?user_id=${userId}`,
-        timeout: 10, // User has 10 seconds to respond
-    }).say("Press any key to send a response to Telegram.");
-
-    // If no input, repeat
-    twiml.pause({ length: 3 });
-    twiml.say("Still there? Press any key to continue.");
+    // Keep call active indefinitely with a loop
+    twiml.say("I will stay on the call for a while. Press any key when you are ready.");
+    twiml.pause({ length: 10 });
+    twiml.redirect(`${process.env.WEBHOOK_URL}/twiml?user_id=${userId}`); // Loop back to itself
 
     res.type('text/xml').send(twiml.toString());
 });
